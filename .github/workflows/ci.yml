@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  bandit_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Bandit
+        run: pip install bandit
+      - name: Run Bandit Scan
+        # Filtramos niveles bajos (-ll para severity, -ii para confidence)
+        # Generamos JSON y SARIF para cumplir todos los puntos del ejercicio
+        run: |
+          bandit -r . -f json -o sast-bandit.json -ll -ii || true
+          bandit -r . -f sarif -o bandit-results.sarif -ll -ii || true
+      - name: Upload Bandit Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-results
+          path: |
+            sast-bandit.json
+            bandit-results.sarif
+
+  semgrep_scan:
+    runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Semgrep
+        # Filtramos por ERROR y WARNING. Salida en JSON y SARIF.
+        run: |
+          semgrep scan --severity=ERROR --severity=WARNING --json --output=sast-semgrep.json || true
+          semgrep scan --severity=ERROR --severity=WARNING --sarif --output=semgrep-results.sarif || true
+      - name: Upload Semgrep Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: |
+            sast-semgrep.json
+            semgrep-results.sarif
+
+  build_and_scout:
+    needs: [bandit_scan, semgrep_scan] # Se ejecuta tras los SAST
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+     
+      - name: Build image
+        run: docker build -t pygoat:latest .
+
+      - name: Docker Scout Scan
+        uses: docker/scout-action@v1
+        with:
+          command: quickview, cves
+          image: pygoat:latest
+          only-severities: critical,high
