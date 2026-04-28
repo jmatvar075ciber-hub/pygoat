@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ "main", "master" ]
 
-# ESTO ES NUEVO: Permiso para escribir en la pestaña Security
 permissions:
   security-events: write
 
@@ -22,19 +21,19 @@ jobs:
       - name: Install Bandit
         run: pip install bandit
       - name: Run Bandit Scan
+        # Quitamos los filtros estrictos para asegurar que encuentre algo y cree los archivos
         run: |
-          bandit -r . -f json -o sast-bandit.json -ll -ii || true
-          bandit -r . -f sarif -o bandit-results.sarif -ll -ii || true
+          bandit -r . -f json -o sast-bandit.json || true
+          bandit -r . -f sarif -o bandit-results.sarif || true
       - name: Upload Bandit Artifact
         uses: actions/upload-artifact@v4
         with:
           name: bandit-results
-          path: |
-            sast-bandit.json
-            bandit-results.sarif
-      # ESTO ES NUEVO: Sube los resultados a la pestaña Security
+          path: sast-bandit.json
+          if-no-files-found: warn
       - name: Upload Bandit SARIF
         uses: github/codeql-action/upload-sarif@v3
+        if: success() || failure()
         with:
           sarif_file: bandit-results.sarif
 
@@ -43,7 +42,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Semgrep
-        # Usamos docker run para evitar problemas con el container base y sarif
         run: |
           docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan --severity=ERROR --severity=WARNING --json --output=sast-semgrep.json || true
           docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan --severity=ERROR --severity=WARNING --sarif --output=semgrep-results.sarif || true
@@ -51,22 +49,20 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: semgrep-results
-          path: |
-            sast-semgrep.json
-            semgrep-results.sarif
-      # ESTO ES NUEVO: Sube los resultados a la pestaña Security
+          path: sast-semgrep.json
+          if-no-files-found: warn
       - name: Upload Semgrep SARIF
         uses: github/codeql-action/upload-sarif@v3
+        if: success() || failure()
         with:
           sarif_file: semgrep-results.sarif
 
   build_and_scout:
     needs: [bandit_scan, semgrep_scan]
     runs-on: ubuntu-latest
+    if: always() # Para que se ejecute aunque los anteriores tengan avisos
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
       - name: Build image
         run: docker build -t pygoat:latest .
       - name: Docker Scout Scan
@@ -74,4 +70,3 @@ jobs:
         with:
           command: quickview, cves
           image: pygoat:latest
-          only-severities: critical,high
