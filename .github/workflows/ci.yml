@@ -9,49 +9,33 @@ permissions:
   contents: read
 
 jobs:
-  analisis:
+  seguridad:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      # Bandit: Instalamos y ejecutamos sin filtros para que encuentre cosas
+      # Bandit usando su acción oficial (esto evita errores de rutas)
       - name: Bandit Scan
-        run: |
-          pip install bandit
-          bandit -r . -f sarif -o bandit-results.sarif || echo "Bandit finished with issues"
-          bandit -r . -f json -o bandit-results.json || echo "Bandit finished with issues"
+        uses: shundor/python-bandit-scan@9ccf06f52e256860882e3409159981881477759d
+        with:
+          exit_code: 0 # Para que no rompa el pipeline si encuentra fallos
 
-      # Semgrep: Usamos la acción oficial de Docker pero de forma directa
+      # Semgrep usando su acción oficial
       - name: Semgrep Scan
-        run: |
-          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan --sarif --output=semgrep-results.sarif || echo "Semgrep finished"
-          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan --json --output=semgrep-results.json || echo "Semgrep finished"
+        uses: returntocorp/semgrep-action@v1
+        with:
+          generateSarif: "1"
 
-      # Subir SARIF de Bandit
+      # Subir los resultados a la pestaña Security (GitHub los busca por defecto)
       - name: Upload Bandit SARIF
         uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: bandit-results.sarif
         if: always()
+        with:
+          sarif_file: bandit.sarif
 
-      # Subir SARIF de Semgrep
       - name: Upload Semgrep SARIF
         uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: semgrep-results.sarif
         if: always()
-
-      # Subir los JSON para que los descargues
-      - name: Upload JSONs
-        uses: actions/upload-artifact@v4
         with:
-          name: reportes-json
-          path: |
-            bandit-results.json
-            semgrep-results.json
+          sarif_file: semgrep.sarif
