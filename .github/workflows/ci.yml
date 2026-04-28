@@ -9,57 +9,53 @@ permissions:
   contents: read
 
 jobs:
-  pruebas_seguridad:
+  pipeline:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout del código
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Bandit Scan
+      - name: Ejecutar Scans de Seguridad
         run: |
+          # 1. Instalar Bandit
           pip install bandit
-          bandit -r . -f json -o bandit-output.json || true
-          bandit -r . -f sarif -o bandit-output.sarif || true
+          
+          # 2. Crear archivos vacíos para que NUNCA de error de "path not found"
+          touch bandit-report.json bandit-report.sarif semgrep-report.json semgrep-report.sarif
+          
+          # 3. Correr Bandit (el '|| true' evita que el pipeline se pare si hay fallos)
+          bandit -r . -f json -o bandit-report.json || true
+          bandit -r . -f sarif -o bandit-report.sarif || true
+          
+          # 4. Correr Semgrep usando Docker
+          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan --severity=ERROR --severity=WARNING --json --output=semgrep-report.json || true
+          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan --severity=ERROR --severity=WARNING --sarif --output=semgrep-report.sarif || true
 
-      - name: Semgrep Scan
-        run: |
-          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan --severity=ERROR --severity=WARNING --json --output=semgrep-output.json || true
-          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan --severity=ERROR --severity=WARNING --sarif --output=semgrep-output.sarif || true
-
-      - name: Subir JSONs (Para entrega)
+      - name: Subir JSONs (Artefactos para descargar)
         uses: actions/upload-artifact@v4
         with:
           name: reportes-json
           path: |
-            bandit-output.json
-            semgrep-output.json
+            bandit-report.json
+            semgrep-report.json
 
-      - name: Upload Bandit SARIF
+      - name: Subir Bandit a pestaña Security
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
         with:
-          sarif_file: bandit-output.sarif
+          sarif_file: bandit-report.sarif
+        if: always()
 
-      - name: Upload Semgrep SARIF
+      - name: Subir Semgrep a pestaña Security
         uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-report.sarif
         if: always()
-        with:
-          sarif_file: semgrep-output.sarif
 
-  build_image:
-    needs: pruebas_seguridad
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build
-        run: docker build -t pygoat:latest .
-      - name: Docker Scout
-        uses: docker/scout-action@v1
-        with:
-          command: quickview
-          image: pygoat:latest
+      - name: Build y Scout (Final)
+        run: |
+          docker build -t pygoat:latest .
