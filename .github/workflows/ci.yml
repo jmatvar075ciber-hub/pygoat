@@ -12,22 +12,23 @@ jobs:
   seguridad:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout del codigo
         uses: actions/checkout@v4
 
-      # Bandit usando su acción oficial (esto evita errores de rutas)
+      # Bandit: Usamos la version master que es la mas compatible
       - name: Bandit Scan
-        uses: shundor/python-bandit-scan@9ccf06f52e256860882e3409159981881477759d
+        uses: shundor/python-bandit-scan@master
         with:
-          exit_code: 0 # Para que no rompa el pipeline si encuentra fallos
+          exit_code: 0
 
-      # Semgrep usando su acción oficial
+      # Semgrep: Esta accion es muy robusta
       - name: Semgrep Scan
         uses: returntocorp/semgrep-action@v1
         with:
           generateSarif: "1"
 
-      # Subir los resultados a la pestaña Security (GitHub los busca por defecto)
+      # Subir los resultados a la pestaña Security
+      # Nota: Estas acciones buscan automaticamente los archivos bandit.sarif y semgrep.sarif
       - name: Upload Bandit SARIF
         uses: github/codeql-action/upload-sarif@v3
         if: always()
